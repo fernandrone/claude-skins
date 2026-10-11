@@ -14,7 +14,7 @@ import { disclosedRow, openedRows } from './detail-rows'
 import { copyOf } from './markdown'
 import { CHART_HINT } from './mermaid'
 import { commandSegments } from './command-output'
-import { askBand, desktopSpinnerRow, diffCard, footerRow, terminalCard, usageBand, groupRow, promptRow, quietResult, replyRows, spaced, spinnerRow, toolRow, GUTTER } from './rows'
+import { askBand, desktopSpinnerRow, diffCard, footerRow, terminalCard, usageBand, groupRow, noticeRow, promptRow, quietResult, replyRows, spaced, spinnerRow, toolRow, GUTTER } from './rows'
 import type { Look, SvgElement, Ui } from './rows'
 import { galleryPane } from './gallery'
 import { keepsOwnRow, SHELLS, shellResultOf } from './shell'
@@ -918,11 +918,22 @@ reply width: ${lastColumns} columns`
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     const active = await activeSkin($)
 
-    if (active === null || !TYPED.has(e.props.origin.kind) || e.props.text.length > MAX_PROMPT) {
+    if (active === null || e.props.text.length > MAX_PROMPT) {
       return next(e)
     }
 
     const look = lookOf($.ui.resolve(e), active, e.surface)
+
+    // A background task's one-line notice takes the skin's colours on the terminal; ctrl+o
+    // and the other surfaces keep Claude Code's drawing of it.
+    if (e.props.task !== undefined && e.surface === 'terminal' && !e.props.isExpanded && !e.props.text.includes('\n')) {
+      return spaced(look, noticeRow(look, e.props.text, e.props.task))
+    }
+
+    if (!TYPED.has(e.props.origin.kind)) {
+      return next(e)
+    }
+
     const hasImages = await read($, memberOf(imagesAtom, e))
 
     // Claude Code draws the images; the text is already in the outline above them.

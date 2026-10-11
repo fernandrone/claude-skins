@@ -245,6 +245,39 @@ test('a typed prompt sits in an outline sized to its text, other senders keep th
   }
 })
 
+test('a background task\'s notice takes the skin\'s colours on the terminal, by how the task ended', async ($, on) => {
+  stubEngine(on)
+
+  const notice = (surface: (typeof SURFACES)[number], status: string, isExpanded = false) =>
+    ({
+      ...SITE,
+      surface,
+      component: 'UserMessage',
+      requestId: `n-${status}`,
+      props: { text: 'Agent "Review PR 197" finished', origin: { kind: 'task-notification' }, isExpanded, task: { id: 'a1', status, durationMs: 89_000 } },
+    }) as const
+
+  for (const [status, glyph, color] of [
+    ['completed', '●', noir.palette.ok],
+    ['failed', '✕', noir.palette.err],
+    ['killed', '◌', noir.palette.warn],
+  ] as const) {
+    const ui = await $.ui.mount(notice('terminal', status))
+    const row = (await ui.find({ type: 'Text', text: /Review PR 197/ })) as Found
+    expect(row?.props.color).toBe(noir.palette.fg)
+    expect(spanColor(row, `${glyph} `)).toBe(color)
+    expect(spanColor(row, ' · 1m 29s')).toBe(noir.palette.muted)
+    await ui.unmount()
+  }
+
+  // ctrl+o and the desktop keep Claude Code's own row.
+  for (const kept of [notice('terminal', 'completed', true), notice('desktop', 'completed')]) {
+    const ui = await $.ui.mount(kept)
+    expect(await ui.find({ type: 'Text', text: 'stock row' })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
 test('/skin prompt right moves the outline to the right, and the settings pane moves it back', async ($, on) => {
   stubEngine(on)
   const alignOf = async (surface: (typeof SURFACES)[number]) => {

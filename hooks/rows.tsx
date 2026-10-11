@@ -800,6 +800,27 @@ export function footerRow(look: Look, word: string, durationMs: number, stats: T
   )
 }
 
+// A background task's notification: how it ended, its summary, how long it ran.
+export function noticeRow(look: Look, text: string, task: { status?: string; durationMs?: number }) {
+  const { Text } = look.ui
+  const { palette } = look.skin
+  const { icons } = look
+  const mark =
+    task.status === 'failed'
+      ? { glyph: icons.err, color: palette.err }
+      : task.status === 'killed'
+        ? { glyph: icons.interrupted, color: palette.warn }
+        : { glyph: icons.ok, color: task.status === 'completed' ? palette.ok : palette.muted }
+
+  return (
+    <Text color={palette.fg}>
+      <Text color={mark.color}>{`${mark.glyph} `}</Text>
+      {text}
+      {task.durationMs === undefined ? '' : <Text color={palette.muted}>{` · ${formatDuration(task.durationMs)}`}</Text>}
+    </Text>
+  )
+}
+
 // A band above Claude Code's own question dialog: the topics it asks about, in the skin.
 export function askBand(look: Look, headers: readonly string[]) {
   const { Text } = look.ui
