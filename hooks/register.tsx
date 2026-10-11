@@ -14,7 +14,7 @@ import { disclosedRow, openedRows } from './detail-rows'
 import { copyOf } from './markdown'
 import { CHART_HINT } from './mermaid'
 import { commandSegments } from './command-output'
-import { askBand, desktopSpinnerRow, diffCard, footerRow, terminalCard, usageBand, groupRow, promptRow, quietResult, replyRows, spinnerRow, toolRow } from './rows'
+import { askBand, desktopSpinnerRow, diffCard, footerRow, terminalCard, usageBand, groupRow, promptRow, quietResult, replyRows, spaced, spinnerRow, toolRow, GUTTER } from './rows'
 import type { Look, SvgElement, Ui } from './rows'
 import { galleryPane } from './gallery'
 import { keepsOwnRow, SHELLS, shellResultOf } from './shell'
@@ -972,8 +972,11 @@ reply width: ${lastColumns} columns`
     const base = await sessionLook($, e, lookOf(ui, active, e.surface, copy), replyNeeds(text, segments))
     const look = base.svg === undefined ? base : { ...base, isFirstDraw: await firstDraws($, e, prefs) }
 
+    // The terminal's reply sits in from the edge, so its tables have that much less room.
+    const columns = (e.viewport?.columns ?? 100) - (e.surface === 'terminal' ? GUTTER : 0)
+
     // A reply of several blocks can be copied whole, as Claude wrote it.
-    return withSettle($, e, replyRows(look, segments, e.viewport?.columns ?? 100, svg, segments.length > 1 ? text : undefined))
+    return withSettle($, e, spaced(look, replyRows(look, segments, columns, svg, segments.length > 1 ? text : undefined), GUTTER))
   })
 
   // A slash command's output (`/cost`, `/context`, a plugin's) drawn the way a reply is: its
@@ -1045,7 +1048,9 @@ reply width: ${lastColumns} columns`
     const turns = await read($, turnsAtom)
     const word = pick(active.skin.done, e.props.word) ?? e.props.word
 
-    return footerRow(lookOf($.ui.resolve(e), active, e.surface), word, e.props.durationMs, turns[String(e.props.durationMs)])
+    const look = lookOf($.ui.resolve(e), active, e.surface)
+
+    return spaced(look, footerRow(look, word, e.props.durationMs, turns[String(e.props.durationMs)]))
   })
 
   // The band above the prompt: context and plan limits. Another mod's drawing there,

@@ -372,6 +372,27 @@ test('the turn footer names the time in the skin’s words', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^◆ .+ in 1m 4s$/ })).toBeDefined()
 })
 
+test('a terminal reply and footer keep Claude Code’s blank line above, and the reply its gutter', async ($, on) => {
+  stubEngine(on)
+
+  type Node = { props?: { marginTop?: unknown; paddingLeft?: unknown } }
+  const table = '| Route | Limit |\n|---|---|\n| /chat | 60 |'
+
+  for (const surface of SURFACES) {
+    const reply = await $.ui.mount({ ...SITE, surface, component: 'AssistantMessage', requestId: 'g1', props: { text: table, isFirstOfReply: true } })
+    const footer = await $.ui.mount({ ...SITE, surface, component: 'TurnDuration', requestId: 'g2', props: { word: 'Baked', durationMs: 64000 } })
+    const outer = (await reply.find({ type: 'Box' })) as Node
+    const above = (await footer.find({ type: 'Box' })) as Node | undefined
+
+    // The desktop lays rows out its own way, so only the terminal's are held off the edge.
+    expect(outer.props?.marginTop).toBe(surface === 'terminal' ? 1 : undefined)
+    expect(outer.props?.paddingLeft).toBe(surface === 'terminal' ? 2 : undefined)
+    expect(above?.props?.marginTop).toBe(surface === 'terminal' ? 1 : undefined)
+    await reply.unmount()
+    await footer.unmount()
+  }
+})
+
 test('the question dialog keeps Claude Code’s drawing under a band naming its topics', async ($, on) => {
   stubEngine(on)
 
@@ -448,8 +469,9 @@ test('a table wider than its share spans the column instead of running off it', 
       props: { text: wide, isFirstOfReply: true },
     })
     type Node = { props?: { width?: unknown; position?: unknown; top?: unknown }; children?: readonly Node[] }
-    const reply = (await ui.find({ type: 'Box' })) as Node
-    const frame = reply.children?.[0]
+    // The terminal's reply sits inside the gutter that holds it off the window's edge.
+    const reply = ((await ui.find({ type: 'Box' })) as Node).children?.[0]
+    const frame = reply?.children?.[0]
     // Copy sits on the frame's top border, laid over it at the right.
     const control = frame?.children?.at(-1)
 

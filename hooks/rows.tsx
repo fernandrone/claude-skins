@@ -177,8 +177,29 @@ function stack(look: Look, line: ReturnType<Ui['Text']>) {
       {railLine(look)}
       {line}
     </Box>
+  ) : look.surface === 'terminal' ? (
+    // Without the rail, the blank line Claude Code's own rows keep above them.
+    <Box flexDirection="column" marginTop={1}>
+      {line}
+    </Box>
   ) : (
     line
+  )
+}
+
+// Claude Code's own terminal rows sit under a blank line, and a reply two columns in from
+// the window's edge. A row the skin draws in their place keeps both.
+export const GUTTER = 2
+
+export function spaced(look: Look, row: ReturnType<Ui['Text']>, indent = 0) {
+  const { Box } = look.ui
+
+  return look.surface === 'terminal' ? (
+    <Box flexDirection="column" marginTop={1} paddingLeft={indent}>
+      {row}
+    </Box>
+  ) : (
+    row
   )
 }
 
@@ -290,7 +311,7 @@ export function promptRow(look: Look, text: string, images?: ReturnType<Ui['Text
   const { Box, Text } = look.ui
 
   return (
-    <Box flexDirection="column" alignItems={look.prefs.prompt === 'right' ? 'flex-end' : 'flex-start'} marginY={1}>
+    <Box flexDirection="column" alignItems={look.prefs.prompt === 'right' ? 'flex-end' : 'flex-start'} {...(look.surface === 'terminal' ? { marginTop: 1 } : { marginY: 1 })}>
       <Box borderStyle="round" borderColor={look.skin.palette.muted} paddingX={1} flexShrink={1}>
         <Text color={look.skin.palette.fg}>{text}</Text>
       </Box>
