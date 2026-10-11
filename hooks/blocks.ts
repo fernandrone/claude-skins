@@ -16,9 +16,10 @@ export type Block =
   | { kind: 'tasks'; items: Task[] }
   | { kind: 'paragraph'; lines: Line[] }
 
-export type RunStyle = 'plain' | 'bold' | 'italic' | 'strike' | 'code' | 'number' | 'version' | 'path' | 'duration' | 'url'
+export type RunStyle = 'plain' | 'bold' | 'italic' | 'strike' | 'code' | 'number' | 'version' | 'path' | 'duration' | 'url' | 'link'
 
-export type Run = { style: RunStyle; text: string }
+// A `link` run carries where its label points.
+export type Run = { style: RunStyle; text: string; href?: string }
 
 const HEADING = /^(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/
 const ALERT = /^\s*>\s*\[!(note|tip|important|warning|caution)\]\s*(.*)$/i
@@ -26,12 +27,24 @@ const QUOTE = /^\s*>\s?(.*)$/
 const TASK = /^(\s*)[-*+]\s+\[([ xX])\]\s+(.*)$/
 const BULLET = /^(\s*)([-*+]|\d{1,3}[.)])\s+(.*)$/
 
-// Anything here is markdown the skin does not draw: links, images, html, footnotes,
-// escapes, quotes, rules, indented code, maths.
+// Anything here is markdown the skin does not draw: images, html, footnotes, escapes,
+// quotes, rules, indented code, maths, and any link `LINK` does not read.
 const FOREIGN = /<|\\|\||!\[|\]\(|\]\[|\[\^|&[a-z#\d]+;|\$\$|^\s*(>|#|[-*_]{3,}\s*$)|^ {4}|^\t/m
 const FENCE = /^\s*(```|~~~)/
 
-const INLINE = /(`+)([^`]+?)\1|\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__|~~(?=\S)(.+?)(?<=\S)~~|(?<![\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])|(?<![\w_])_(?=\S)(.+?)(?<=\S)_(?![\w_])/g
+// An inline link, `[label](url)` or `[label](url "title")`; not an image. The label holds
+// no bracket, the URL no space and at most one level of balanced parentheses
+// (`/wiki/Foo_(bar)`), and the title, in either quote, is dropped. Reference links
+// (`[label][1]`) are not read.
+const LINK_SOURCE = String.raw`(?<!!)\[([^\[\]\n]+)\]\([ \t]*((?:[^()\s]|\([^()\s]*\))+)(?:[ \t]+(?:"[^"\n]*"|'[^'\n]*'))?[ \t]*\)`
+const LINK = new RegExp(LINK_SOURCE, 'g')
+
+const MARKS = /\*\*|__|~~|`/g
+
+const EMPHASIS = /(`+)([^`]+?)\1|\*\*(?=\S)(.+?)(?<=\S)\*\*|__(?=\S)(.+?)(?<=\S)__|~~(?=\S)(.+?)(?<=\S)~~|(?<![\w*])\*(?=\S)(.+?)(?<=\S)\*(?![\w*])|(?<![\w_])_(?=\S)(.+?)(?<=\S)_(?![\w_])/
+
+// Code and emphasis, then a link: its label and its URL are the last two groups.
+const INLINE = new RegExp(`${EMPHASIS.source}|${LINK_SOURCE}`, 'g')
 
 // Ordered so a URL wins over the path inside it, and a path over its version or number. A
 // path keeps a `:line` or `:line:col` after it.
@@ -83,13 +96,32 @@ export function inlineRuns(text: string): Run[] {
   for (const match of text.matchAll(INLINE)) {
     runs.push(...highlight(text.slice(last, match.index)))
 
-    const [, , code, bold, under, strike, star, low] = match
+    const [, , code, bold, under, strike, star, low, label, href] = match
+    last = match.index + match[0].length
+
+    if (label !== undefined && href !== undefined) {
+      runs.push({ style: 'link', text: label.replace(MARKS, ''), href })
+      continue
+    }
+
     const inner = code ?? bold ?? under ?? strike ?? star ?? low ?? ''
     const style: RunStyle = code !== undefined ? 'code' : bold !== undefined || under !== undefined ? 'bold' : strike !== undefined ? 'strike' : 'italic'
 
-    // Emphasis inside emphasis keeps the outer style; its marks are dropped.
-    runs.push({ style, text: style === 'code' ? inner.trim() : inner.replace(/\*\*|__|~~|`/g, '') })
-    last = match.index + match[0].length
+    if (style === 'code') {
+      runs.push({ style, text: inner.trim() })
+      continue
+    }
+
+    // Emphasis inside emphasis keeps the outer style, its marks dropped; a link inside
+    // stays a link.
+    let rest = 0
+
+    for (const link of inner.matchAll(LINK)) {
+      runs.push({ style, text: inner.slice(rest, link.index).replace(MARKS, '') }, { style: 'link', text: (link[1] ?? '').replace(MARKS, ''), href: link[2] ?? '' })
+      rest = link.index + link[0].length
+    }
+
+    runs.push({ style, text: inner.slice(rest).replace(MARKS, '') })
   }
 
   runs.push(...highlight(text.slice(last)))
@@ -101,7 +133,9 @@ const depthOf = (indent: string): number => Math.floor(indent.replace(/\t/g, '  
 
 // A paragraph the skin can draw, or null to leave it to Claude Code's markdown.
 function paragraphOf(text: string): Line[] | null {
-  if (FOREIGN.test(text)) {
+  // A link `LINK` reads is drawn; its label and URL are checked like any other text, behind
+  // a letter so a label opening a line (`[#12](…)`) is not read as a heading or a quote.
+  if (FOREIGN.test(text.replace(LINK, 'x$1 $2'))) {
     return null
   }
 

@@ -24,6 +24,7 @@ const SLOTS: Partial<Record<RunStyle, keyof Palette>> = {
   version: 'mcp',
   path: 'read',
   url: 'web',
+  link: 'web',
 }
 
 // The colour a path takes: created this turn (ok), edited (warn), else the path colour.
@@ -37,13 +38,24 @@ function runText(look: Look, run: Run) {
   const { Link, Text } = look.ui
   const { palette } = look.skin
   const slot = run.style === 'path' ? pathSlot(look, run.text) : SLOTS[run.style]
-  const href = run.style === 'url' && look.links === true ? safeHref(run.text) : null
+  const target = run.style === 'link' ? (run.href ?? '') : run.text
+  const href = (run.style === 'url' || run.style === 'link') && look.links === true ? safeHref(target) : null
 
   // A URL the engine's Link takes is one where the surface draws links; any other is text.
   if (href !== null) {
     return (
       <Text color={palette.web} underline>
         <Link href={href}>{run.text}</Link>
+      </Text>
+    )
+  }
+
+  // A link that cannot be drawn as one keeps its address beside the label.
+  if (run.style === 'link' && target !== run.text) {
+    return (
+      <Text>
+        <Text color={palette.web}>{run.text}</Text>
+        <Text color={palette.muted}>{` (${target})`}</Text>
       </Text>
     )
   }

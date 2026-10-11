@@ -119,6 +119,38 @@ test('a URL in prose is a Link where the terminal draws them, and text elsewhere
   expect(await plain.find({ type: 'Text', text: /code\.claude\.com/ })).toBeDefined()
 })
 
+test('a markdown link in prose is a Link on its label, and label and address as text where links are not drawn', async ($, on) => {
+  stub(on, { FORCE_HYPERLINK: '1' })
+  await start($)
+  const text = '- **Merged:** PR [#197](https://example.com/pull/197).\n- **Started:** the trial.'
+
+  const linked = await $.ui.mount(reply(text))
+  const link = (await linked.find({ type: 'Link' })) as Node | undefined
+  expect(link?.props.href).toBe('https://example.com/pull/197')
+  expect(link?.children).toEqual(['#197'])
+  // The whole list is the skin's, not Claude Code's own drawing.
+  expect(await linked.find({ type: 'Text', text: 'stock row' })).toBeUndefined()
+  expect(await linked.find({ type: 'Markdown' })).toBeUndefined()
+  await linked.unmount()
+
+  // A title is dropped and brackets in the address kept.
+  const titled = await $.ui.mount(reply('See [Foo](https://en.wikipedia.org/wiki/Foo_(bar) "Foo (bar)") for more.', 'terminal', 'm2'))
+  expect(((await titled.find({ type: 'Link' })) as Node | undefined)?.props.href).toBe('https://en.wikipedia.org/wiki/Foo_(bar)')
+  expect(await titled.find({ type: 'Text', text: /Foo \(bar\)"/ })).toBeUndefined()
+  await titled.unmount()
+
+  // An address the engine's Link refuses is label and address as text.
+  const local = await $.ui.mount(reply('Open [the notes](docs/notes.md) first.', 'terminal', 'm3'))
+  expect(await local.find({ type: 'Link' })).toBeUndefined()
+  expect(await local.find({ type: 'Text', text: ' (docs/notes.md)' })).toBeDefined()
+  await local.unmount()
+
+  await skin($, 'links off')
+  const plain = await $.ui.mount(reply(text))
+  expect(await plain.find({ type: 'Link' })).toBeUndefined()
+  expect(await plain.find({ type: 'Text', text: ' (https://example.com/pull/197)' })).toBeDefined()
+})
+
 test('a terminal that does not draw OSC 8 gets the URL as text', async ($, on) => {
   stub(on, { TERM: 'xterm-256color' })
   await start($)

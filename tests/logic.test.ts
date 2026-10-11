@@ -379,7 +379,7 @@ test('the markdown pack lifts alerts, task lists and headings out of a reply and
       '- [x] parse',
       '  - [ ] draw',
       '',
-      'More in [the docs](https://example.com).',
+      'More in [the docs][1].',
       '',
       '```ts',
       '# not a heading',
@@ -392,8 +392,8 @@ test('the markdown pack lifts alerts, task lists and headings out of a reply and
   expect(blocks[0]).toEqual({ kind: 'heading', level: 2, text: 'Plan' })
   expect(blocks[2]).toEqual({ kind: 'alert', type: 'warning', body: 'This deletes the cache.' })
   expect(blocks[3]).toEqual({ kind: 'tasks', items: [{ done: true, depth: 0, text: 'parse' }, { done: false, depth: 1, text: 'draw' }] })
-  // The link and the fence after it stay one stretch of Claude Code's markdown.
-  expect(blocks[4]).toEqual({ kind: 'markdown', text: 'More in [the docs](https://example.com).\n\n```ts\n# not a heading\n```' })
+  // A reference link and the fence after it stay one stretch of Claude Code's markdown.
+  expect(blocks[4]).toEqual({ kind: 'markdown', text: 'More in [the docs][1].\n\n```ts\n# not a heading\n```' })
 
   const prose = splitBlocks('## Plan\n\nRan 54 tests.\n\n- [ ] ship', { prose: false })
   expect(prose.map(block => block.kind)).toEqual(['markdown', 'tasks'])
@@ -413,6 +413,123 @@ test('inline runs pick out code, emphasis, numbers, versions, paths and duration
   // Words with digits and snake_case stay plain.
   expect(styled('utf8 e2e my_var_name and/or')).toEqual([])
   expect(styled('*quiet* and ~~gone~~')).toEqual(['italic:quiet', 'strike:gone'])
+})
+
+test('a plain markdown link is a run of its own, so its paragraph and its list stay the skin\'s', async () => {
+  expect(inlineRuns('PR [#197](https://example.com/pull/197), then **see [`the docs`](https://example.com/docs) too**.')).toEqual([
+    { style: 'plain', text: 'PR ' },
+    { style: 'link', text: '#197', href: 'https://example.com/pull/197' },
+    { style: 'plain', text: ', then ' },
+    { style: 'bold', text: 'see ' },
+    { style: 'link', text: 'the docs', href: 'https://example.com/docs' },
+    { style: 'bold', text: ' too' },
+    { style: 'plain', text: '.' },
+  ])
+  // Inside code it is code.
+  expect(inlineRuns('`[a](https://example.com)`')).toEqual([{ style: 'code', text: '[a](https://example.com)' }])
+
+  const kinds = (text: string) => splitBlocks(text, { prose: true }).map(block => block.kind)
+
+  expect(kinds('- **Merged:** PR [#197](https://example.com/pull/197).\n- **Started:** the trial.')).toEqual(['paragraph'])
+  // A label that opens a line with `#` or `>` is not a heading or a quote.
+  expect(kinds('[#197](https://example.com/pull/197) is merged.')).toEqual(['paragraph'])
+  expect(kinds('[>= 2.0](https://example.com/v2) is needed.')).toEqual(['paragraph'])
+})
+
+const links = (text: string) =>
+  inlineRuns(text)
+    .filter(run => run.style === 'link')
+    .map(run => [run.text, run.href])
+
+const proseKinds = (text: string) => splitBlocks(text, { prose: true }).map(block => block.kind)
+
+test('a link keeps a URL with balanced parentheses whole, and stops at the bracket that closes it', async () => {
+  expect(links('See [Foo](https://en.wikipedia.org/wiki/Foo_(bar)) now.')).toEqual([['Foo', 'https://en.wikipedia.org/wiki/Foo_(bar)']])
+  expect(links('[a](https://example.com/a_(b)_(c)/d)')).toEqual([['a', 'https://example.com/a_(b)_(c)/d']])
+  expect(links('[a](https://example.com/f())')).toEqual([['a', 'https://example.com/f()']])
+  // Prose brackets around a link are not the URL's.
+  expect(inlineRuns('(see [the docs](https://example.com/a)).')).toEqual([
+    { style: 'plain', text: '(see ' },
+    { style: 'link', text: 'the docs', href: 'https://example.com/a' },
+    { style: 'plain', text: ').' },
+  ])
+  expect(inlineRuns('(see [Foo](https://example.com/Foo_(bar))).')).toEqual([
+    { style: 'plain', text: '(see ' },
+    { style: 'link', text: 'Foo', href: 'https://example.com/Foo_(bar)' },
+    { style: 'plain', text: ').' },
+  ])
+  // Two links on a line stay two, each with its own URL.
+  expect(links('[a](https://example.com/1) and [b](https://example.com/2_(x)).')).toEqual([
+    ['a', 'https://example.com/1'],
+    ['b', 'https://example.com/2_(x)'],
+  ])
+  // A query, a fragment, a port, percent escapes and underscores are the URL's.
+  expect(links('[q](https://example.com:8080/a_b/c%20d?x=1&y=_z_#frag-2) *after*')).toEqual([['q', 'https://example.com:8080/a_b/c%20d?x=1&y=_z_#frag-2']])
+  expect(proseKinds('[q](https://example.com:8080/a_b/c%20d?x=1&y=_z_#frag-2) *after*')).toEqual(['paragraph'])
+
+  // Parentheses nested twice or left open are not read: the block is Claude Code's.
+  for (const text of ['[a](https://example.com/a_(b_(c)))', '[a](https://example.com/a_(b)', '[a](https://example.com/a(b']) {
+    expect(links(text)).toEqual([])
+    expect(proseKinds(text)).toEqual(['markdown'])
+  }
+})
+
+test('a link drops its title, in either quote, and the space around its URL', async () => {
+  expect(links('[a](https://example.com "The docs")')).toEqual([['a', 'https://example.com']])
+  expect(links("[a](https://example.com 'The docs')")).toEqual([['a', 'https://example.com']])
+  expect(links('[a](https://example.com/Foo_(bar) "Foo (bar), again")')).toEqual([['a', 'https://example.com/Foo_(bar)']])
+  expect(links('[a](https://example.com "")')).toEqual([['a', 'https://example.com']])
+  expect(links('[a]( https://example.com )')).toEqual([['a', 'https://example.com']])
+  expect(inlineRuns('Read [a](https://example.com "T"), then [b](https://example.com/b).').map(run => run.text)).toEqual(['Read ', 'a', ', then ', 'b', '.'])
+  expect(proseKinds('Read [a](https://example.com "The docs") first.')).toEqual(['paragraph'])
+
+  // A title left open or in brackets, or a second word, is not a link the skin reads.
+  for (const text of ['[a](https://example.com "open)', '[a](https://example.com (title))', '[a](https://example.com two words)']) {
+    expect(proseKinds(text)).toEqual(['markdown'])
+  }
+})
+
+test('what is not an inline link the skin reads stays Claude Code\'s markdown', async () => {
+  for (const text of [
+    'See ![shot](https://example.com/a.png).',
+    'See [the docs][1].',
+    'See [the docs][].',
+    'See [a\\_b](https://example.com).',
+    'See [a](https://example.com/a\\_b).',
+    'See [a](<https://example.com/a b>).',
+    'See [a](https://example.com/?q=a&amp;b=c).',
+    'See [a]().',
+    'See [[a]](https://example.com).',
+    'See [a\nb](https://example.com).',
+    'See [a] (https://example.com) and [b](https://example.com).\n\n    indented',
+  ]) {
+    expect(proseKinds(text).includes('markdown')).toBe(true)
+  }
+
+  // A bracket that opens no link is plain text beside the link that follows it.
+  expect(inlineRuns('[draft [a](https://example.com)')).toEqual([
+    { style: 'plain', text: '[draft ' },
+    { style: 'link', text: 'a', href: 'https://example.com' },
+  ])
+  // Brackets with no address after them are not links at all.
+  expect(links('items[0] and [note] (later)')).toEqual([])
+  expect(proseKinds('items[0] and [note] (later)')).toEqual(['paragraph'])
+})
+
+test('a link inside emphasis, and emphasis marks inside a URL, each keep to their own', async () => {
+  expect(inlineRuns('_see [a](https://example.com/b_c)_ and *[b](https://example.com/x*y)*')).toEqual([
+    { style: 'italic', text: 'see ' },
+    { style: 'link', text: 'a', href: 'https://example.com/b_c' },
+    { style: 'plain', text: ' and ' },
+    { style: 'link', text: 'b', href: 'https://example.com/x*y' },
+  ])
+  expect(inlineRuns('[`code`](https://example.com/__init__.py) and [**bold**](https://example.com/~~x~~)')).toEqual([
+    { style: 'link', text: 'code', href: 'https://example.com/__init__.py' },
+    { style: 'plain', text: ' and ' },
+    { style: 'link', text: 'bold', href: 'https://example.com/~~x~~' },
+  ])
+  // A label that is its own address.
+  expect(links('[https://example.com/a](https://example.com/a)')).toEqual([['https://example.com/a', 'https://example.com/a']])
 })
 
 test('quiet output splits a command on its separators and leaves quoted ones alone', () => {
