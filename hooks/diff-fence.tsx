@@ -49,7 +49,7 @@ export const newOnly = (diff: DiffInput): string =>
     .flatMap(hunk => hunk.lines.filter(line => !line.startsWith('-') && !line.startsWith('\\')).map(line => line.slice(1)))
     .join('\n')
 
-// The terminal's drawing: a frame like a code block's, the numbers in a gutter.
+// The terminal's drawing: a frame, the numbers in a gutter.
 export function diffRows(look: Look, diff: DiffInput, control: ReturnType<Ui['Button']> | ReturnType<Ui['Box']> | undefined, foldKey: string) {
   const { Box, Text } = look.ui
   const { palette } = look.skin

@@ -3,8 +3,8 @@ import type { Token } from './highlight'
 import { FOLD_CODE, foldButton, shownCount } from './fold'
 import type { Look, Ui } from './rows'
 
-// Code on the terminal in the skin's colours: a fenced block as a framed run of lines with
-// its language on the top border, and shell output with its paths, numbers and verdicts
+// Code on the terminal in the skin's colours: a fenced block as a run of lines under
+// its language, and shell output with its paths, numbers and verdicts
 // picked out. The roles come from highlight.ts.
 
 export function tokenSpans(look: Look, tokens: readonly Token[]) {
@@ -25,7 +25,8 @@ export function outputLine(look: Look, text: string) {
   return <Text wrap="truncate-end">{tokenSpans(look, outputTokens(text))}</Text>
 }
 
-// A fenced block: the language and a control (Copy) on the frame, then each line highlighted.
+// A fenced block: the language and a control (Copy) on a line above, then each line highlighted.
+// No frame is drawn round it, so a selection in the terminal takes the code alone.
 // Past FOLD_CODE lines it folds under `foldKey`.
 export function codeRows(look: Look, lang: string, code: string, control?: ReturnType<Ui['Button']>, foldKey = 'fold-code') {
   const { Box, Text } = look.ui
@@ -35,21 +36,13 @@ export function codeRows(look: Look, lang: string, code: string, control?: Retur
 
   return (
     <Box flexDirection="column" marginY={1}>
-      <Box flexDirection="column" borderStyle="round" borderColor={palette.muted} paddingX={1}>
-        {shown.map(tokens => (
-          <Text>{tokens.length === 0 || tokens.every(token => token.text === '') ? ' ' : tokenSpans(look, tokens)}</Text>
-        ))}
-        <Box position="absolute" top={-1} left={1}>
-          <Text color={palette.muted}>{` ${lang} `}</Text>
-        </Box>
-        {control === undefined ? (
-          ''
-        ) : (
-          <Box position="absolute" top={-1} right={1}>
-            {control}
-          </Box>
-        )}
+      <Box flexDirection="row" justifyContent="space-between">
+        <Text color={palette.muted}>{lang}</Text>
+        {control === undefined ? '' : control}
       </Box>
+      {shown.map(tokens => (
+        <Text>{tokens.length === 0 || tokens.every(token => token.text === '') ? ' ' : tokenSpans(look, tokens)}</Text>
+      ))}
       {foldButton(look, foldKey, lines.length, FOLD_CODE)}
     </Box>
   )

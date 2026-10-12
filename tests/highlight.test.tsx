@@ -174,13 +174,14 @@ function colorOf(node: unknown, text: string): string | undefined {
   return undefined
 }
 
-test('a fence on the terminal is drawn in the skin\u2019s colours, its language on the frame', async ($, on) => {
+test('a fence on the terminal is drawn in the skin\u2019s colours, its language above it, with no frame', async ($, on) => {
   stub(on)
   await skin($, 'dracula')
   const text = 'Try:\n\n```python\ndef go():\n    return 1  # one\n```'
   const ui = await $.ui.mount({ ...SITE, surface: 'terminal', component: 'AssistantMessage', requestId: 'h1', props: { text, isFirstOfReply: true } })
 
-  expect(await ui.find({ type: 'Text', text: ' python ' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'python' })).toBeDefined()
+  expect(JSON.stringify(await ui.find({ type: 'Box' }))).not.toContain('borderStyle')
   const line = await ui.find({ type: 'Text', text: '    return 1  # one' })
   expect(colorOf(line, 'return')).toBe(dracula.palette.web)
   expect(colorOf(line, '1')).toBe(dracula.palette.search)
